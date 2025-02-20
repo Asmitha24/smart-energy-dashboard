@@ -1,0 +1,18 @@
+# Ignore Python virtual environment
+env/
+
+# Ignore SQLite database files (optional)
+*.db
+*.sqlite3
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore log files and system files
+*.log
+.DS_Store
+
+# Ignore Matplotlib-generated images
+static/energy_plot.png
