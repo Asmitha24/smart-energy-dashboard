@@ -3,10 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Energy Consumption Dashboard</title>
+    <title>Smart Energy Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .chart-container {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        select {
+            margin-bottom: 15px;
+        }
+        table {
+            background: #1e1e1e;
+            border-radius: 8px;
+            color: white;
+        }
+        th, td {
+            text-align: center;
+        }
+    </style>
 </head>
-<body>
-    <h1>Energy Consumption Over the Years</h1>
-    <img src="{{ url_for('static', filename='energy_plot.png') }}" alt="Energy Consumption Graph">
+<body class="container mt-4">
+    <h2 class="text-center">📊 Smart Energy Monitoring Dashboard</h2>
+
+    <div class="d-flex justify-content-between align-items-center my-3">
+        <label for="yearFilter">📅 Filter by Year:</label>
+        <select id="yearFilter" class="form-select w-50">
+            <option value="all">All Years</option>
+        </select>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="energyChart"></canvas>
+    </div>
+
+    <h4 class="mt-4">📋 Energy Data Table</h4>
+    <table class="table table-dark table-striped mt-2">
+        <thead>
+            <tr>
+                <th>Year</th>
+                <th>Energy Consumption (EJ)</th>
+            </tr>
+        </thead>
+        <tbody id="dataTable"></tbody>
+    </table>
+
+    <script>
+        let chartInstance;
+
+        async function fetchData() {
+            try {
+                const response = await fetch("/energy");
+                let data = await response.json();
+
+                if (!data.length) {
+                    alert("No data found! Please check your database.");
+                    return;
+                }
+
+                const yearFilter = document.getElementById("yearFilter");
+                const uniqueYears = [...new Set(data.map(item => item.Year))];
+
+                yearFilter.innerHTML = '<option value="all">All Years</option>';
+                uniqueYears.forEach(year => {
+                    yearFilter.innerHTML += `<option value="${year}">${year}</option>`;
+                });
+
+                function updateChart(selectedYear) {
+                    let filteredData = selectedYear === "all" ? data : data.filter(item => item.Year == selectedYear);
+
+                    const years = filteredData.map(item => item.Year);
+                    const consumption = filteredData.map(item => item["Energy Consumption EJ"]);
+
+                    if (chartInstance) {
+                        chartInstance.destroy();
+                    }
+
+                    const ctx = document.getElementById("energyChart").getContext("2d");
+                    chartInstance = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            labels: years,
+                            datasets: [{
+                                label: "Energy Consumption (EJ)",
+                                data: consumption,
+                                borderColor: "cyan",
+                                backgroundColor: "rgba(0,255,255,0.2)",
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: { display: true }
+                            },
+                            scales: {
+                                x: { grid: { color: "gray" } },
+                                y: { grid: { color: "gray" } }
+                            }
+                        }
+                    });
+
+                    updateTable(filteredData);
+                }
+
+                function updateTable(filteredData) {
+                    const tableBody = document.getElementById("dataTable");
+                    tableBody.innerHTML = "";
+                    filteredData.forEach(row => {
+                        tableBody.innerHTML += `<tr>
+                            <td>${row.Year}</td>
+                            <td>${row["Energy Consumption EJ"]}</td>
+                        </tr>`;
+                    });
+                }
+
+                yearFilter.addEventListener("change", () => updateChart(yearFilter.value));
+                updateChart("all");
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                alert("Error loading data! Check console for details.");
+            }
+        }
+
+        fetchData();
+    </script>
 </body>
 </html>
+
