@@ -1,30 +1,25 @@
+# store_data_sqlite.py
+
 import pandas as pd
 import sqlite3
 
+# Load your actual dataset
+df = pd.read_csv('energy_dataset.csv')
 
-csv_file = "energy_dataset.csv"  # Ensure this file exists
-df = pd.read_csv(csv_file)
+# Optional cleanup
+df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('[^a-zA-Z0-9_]', '', regex=True)
 
-
-conn = sqlite3.connect("energy_data.db")
+# Connect to SQLite DB
+conn = sqlite3.connect('smart_energy.db')
 cursor = conn.cursor()
 
+# Drop old table if it exists
+cursor.execute("DROP TABLE IF EXISTS energy_data")
 
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS energy_usage (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT,
-        energy_consumption REAL
-    )
-""")
+# Store the dataset
+df.to_sql('energy_data', conn, index=False)
 
-
-df.to_sql("energy_usage", conn, if_exists="replace", index=False)
-
-
-print("\n✅ Data Successfully Stored in SQLite Database!")
-print("\n🔹 First 5 Rows from Database:")
-print(pd.read_sql("SELECT * FROM energy_usage LIMIT 5", conn))
-
-
+conn.commit()
 conn.close()
+
+print("✅ Data saved to smart_energy.db in 'energy_data' table.")

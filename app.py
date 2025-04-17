@@ -1,56 +1,109 @@
-import os
-from flask import Flask, jsonify, render_template
+from flask import Flask, render_template, request, send_file
+import pandas as pd
 import sqlite3
-import matplotlib.pyplot as plt
+import io
 
 app = Flask(__name__)
+DB_PATH = "smart_energy.db"
 
-# Function to fetch data from SQLite
-def get_energy_data():
-    conn = sqlite3.connect("energy_data.db")
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT Year, SUM(`Energy Consumption EJ`) FROM energy_usage GROUP BY Year")  
-    data = cursor.fetchall()
-    
+# Load filtered data
+def load_data(country=None, fuel_type=None):
+    conn = sqlite3.connect(DB_PATH)
+    query = "SELECT * FROM energy_data"
+    filters = []
+
+    if country:
+        filters.append(f"country = '{country}'")
+    if fuel_type:
+        filters.append(f"fuel_type = '{fuel_type}'")
+
+    if filters:
+        query += " WHERE " + " AND ".join(filters)
+
+    df = pd.read_sql_query(query, conn)
     conn.close()
-    return [{"Year": row[0], "Energy Consumption EJ": row[1]} for row in data]
+    return df
 
-# API Route to Get Data as JSON (Dynamic)
-@app.route("/energy", methods=["GET"])
-def energy_data():
-    data = get_energy_data()
-    return jsonify(data)
+# Generate chart data
+def get_chart_data(df):
+    if df.empty:
+        return {
+            "years": [],
+            "used": [],
+            "generated": [],
+            "saved": [],
+            "wasted": [],
+            "difference": []
+        }
 
-# Route to Show Graph and JSON Data Together (Dynamic Updates)
-@app.route("/")
-def show_graph():
-    data = get_energy_data()  # Get updated data
-    years = [row["Year"] for row in data]
-    energy_values = [row["Energy Consumption EJ"] for row in data]
+    grouped = df.groupby("year").sum(numeric_only=True).reset_index()
+    used = grouped["energy_consumption_ej"]
+    generated = used * 1.10
+    saved = generated - used
+    wasted = generated * 0.02
+    difference = generated - used
 
-    # Ensure static folder exists
-    if not os.path.exists("static"):
-        os.makedirs("static")
+    return {
+        "years": list(grouped["year"]),
+        "used": list(used.round(2)),
+        "generated": list(generated.round(2)),
+        "saved": list(saved.round(2)),
+        "wasted": list(wasted.round(2)),
+        "difference": list(difference.round(2))
+    }
 
-    # Delete old graph if it exists
-    graph_path = "static/energy_plot.png"
-    if os.path.exists(graph_path):
-        os.remove(graph_path)
+# Summary stats
+def compute_stats(df):
+    used = df["energy_consumption_ej"].sum()
+    generated = used * 1.10
+    saved = generated - used
+    wasted = generated * 0.02
+    return {
+        "used": round(used, 2),
+        "generated": round(generated, 2),
+        "saved": round(saved, 2),
+        "wasted": round(wasted, 2)
+    }
 
-    # Generate New Graph
-    plt.figure(figsize=(10, 5))
-    plt.plot(years, energy_values, marker='o', linestyle='-', color='b')
-    plt.xlabel("Year")
-    plt.ylabel("Energy Consumption (EJ)")
-    plt.title("Energy Consumption Over the Years")
-    plt.grid()
+# Dropdown filter values
+def get_filters():
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql_query("SELECT DISTINCT country, fuel_type FROM energy_data", conn)
+    conn.close()
+    return {
+        "countries": df["country"].dropna().unique().tolist(),
+        "fuel_types": df["fuel_type"].dropna().unique().tolist()
+    }
 
-    plt.savefig(graph_path)  # Save the new graph as an image
-    plt.close()
+@app.route('/')
+def index():
+    country = request.args.get('country')
+    fuel_type = request.args.get('fuel_type')
 
-    # Pass updated data to the template
-    return render_template("index.html", energy_data=data)
+    df = load_data(country, fuel_type)
+    stats = compute_stats(df)
+    chart_data = get_chart_data(df)
+    filters = get_filters()
 
-if __name__ == "__main__":
+    return render_template(
+        "index.html",
+        filters=filters,
+        selected_country=country,
+        selected_fuel_type=fuel_type,
+        energy_stats=stats,
+        chart_data=chart_data
+    )
+
+@app.route('/download')
+def download_csv():
+    df = load_data()
+    output = io.StringIO()
+    df.to_csv(output, index=False)
+    output.seek(0)
+    return send_file(io.BytesIO(output.getvalue().encode()),
+                     mimetype='text/csv',
+                     download_name='filtered_energy_data.csv',
+                     as_attachment=True)
+
+if __name__ == '__main__':
     app.run(debug=True)
